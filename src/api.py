@@ -1,19 +1,36 @@
-"""FastAPI application — REST interface for the document-processing pipeline."""
+"""FastAPI application — REST interface for the document-processing pipeline.
+
+Request formats
+---------------
+Endpoints that accept document pages use multipart/form-data so that an
+optional PDF file can be uploaded alongside other fields.
+
+  pdf (File, optional)
+      Raw PDF file. Pages are extracted as plain text via PyMuPDF.
+
+  pages_json (Form, optional)
+      JSON-encoded array of {"page_number": int, "text": str} objects.
+      Explicit pages override PDF-extracted pages with the same page number.
+
+If both pdf and pages_json are supplied, pages are merged: PDF provides the
+baseline and pages_json overrides individual pages by page_number.
+"""
 
 from __future__ import annotations
 
+import json
 import logging
 
-from fastapi import FastAPI, HTTPException
-
-logger = logging.getLogger(__name__)
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from src import agent
 from src.schemas.document import DocumentProcessingResponse
+from src.tools.pdf_tools import pdf_bytes_to_pages
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 app = FastAPI(
@@ -30,15 +47,9 @@ app.add_middleware(
 )
 
 
-class PageInput(BaseModel):
-    page_number: int
-    text: str
-
-
-class ProcessDocumentRequest(BaseModel):
-    pages: list[PageInput] = Field(..., min_length=1)
-    flow_type: str = "ercole"
-    session_id: str | None = None
+# ---------------------------------------------------------------------------
+# Response models (remain JSON regardless of request format)
+# ---------------------------------------------------------------------------
 
 
 class FollowUpRequest(BaseModel):
@@ -51,18 +62,61 @@ class FollowUpResponse(BaseModel):
     answer: str
 
 
-class ChatRequest(BaseModel):
-    message: str
-    pages: list[PageInput] | None = None
-    session_id: str | None = None
-
-
 class ChatResponse(BaseModel):
     session_id: str | None = None
     flow_type: str | None = None
     intent: str
     response: str
     document_result: dict | None = None
+
+
+class ExtractPdfResponse(BaseModel):
+    total_pages: int
+    pages: list[dict]
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+async def _build_pages(
+    pdf: UploadFile | None,
+    pages_json: str | None,
+) -> list[dict] | None:
+    """Merge PDF-extracted pages with explicitly provided pages.
+
+    PDF pages are extracted first; pages_json entries override by page_number.
+    Returns None when neither source provides any pages.
+    """
+    pages: dict[int, dict] = {}
+
+    if pdf is not None:
+        pdf_bytes = await pdf.read()
+        if not pdf_bytes:
+            raise HTTPException(status_code=400, detail="Uploaded PDF file is empty")
+        try:
+            for p in pdf_bytes_to_pages(pdf_bytes):
+                pages[p["page_number"]] = p
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid PDF: {exc}")
+
+    if pages_json is not None:
+        try:
+            parsed: list[dict] = json.loads(pages_json)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail=f"pages_json is not valid JSON: {exc}")
+        for p in parsed:
+            pages[p["page_number"]] = p
+
+    if not pages:
+        return None
+    return sorted(pages.values(), key=lambda p: p["page_number"])
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
 
 
 @app.get("/")
@@ -75,14 +129,44 @@ async def list_flows() -> dict[str, list[str]]:
     return {"flows": agent.get_available_flows()}
 
 
+@app.post("/extract-pdf", response_model=ExtractPdfResponse)
+async def extract_pdf(pdf: UploadFile = File(...)) -> ExtractPdfResponse:
+    """Extract plain text from each page of an uploaded PDF.
+
+    Useful for inspecting OCR output before sending to the processing pipeline.
+    """
+    pdf_bytes = await pdf.read()
+    if not pdf_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded PDF file is empty")
+    try:
+        pages = pdf_bytes_to_pages(pdf_bytes)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid PDF: {exc}")
+    return ExtractPdfResponse(total_pages=len(pages), pages=pages)
+
+
 @app.post("/process-document", response_model=DocumentProcessingResponse)
-async def process_document(request: ProcessDocumentRequest) -> DocumentProcessingResponse:
-    pages = [{"page_number": p.page_number, "text": p.text} for p in request.pages]
+async def process_document(
+    flow_type: str = Form("ercole"),
+    session_id: str | None = Form(None),
+    pdf: UploadFile | None = File(None),
+    pages_json: str | None = Form(None),
+) -> DocumentProcessingResponse:
+    """Run the full document processing pipeline.
+
+    Requires at least one page source: pdf (file upload) or pages_json (text).
+    """
+    pages = await _build_pages(pdf, pages_json)
+    if not pages:
+        raise HTTPException(
+            status_code=422,
+            detail="Provide at least one page: upload a pdf file or pass pages_json.",
+        )
     try:
         return await agent.process_document(
             pages=pages,
-            flow_type=request.flow_type,
-            session_id=request.session_id,
+            flow_type=flow_type,
+            session_id=session_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -98,17 +182,23 @@ async def follow_up(request: FollowUpRequest) -> FollowUpResponse:
 
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest) -> ChatResponse:
-    pages = (
-        [{"page_number": p.page_number, "text": p.text} for p in request.pages]
-        if request.pages
-        else None
-    )
+async def chat(
+    message: str = Form(...),
+    session_id: str | None = Form(None),
+    pdf: UploadFile | None = File(None),
+    pages_json: str | None = Form(None),
+) -> ChatResponse:
+    """Main chat endpoint.
+
+    Send a message and optionally attach document pages via pdf upload and/or
+    pages_json. The coordinator classifies intent and routes to the correct flow.
+    """
+    pages = await _build_pages(pdf, pages_json)
     try:
         result = await agent.handle_chat_message(
-            message=request.message,
+            message=message,
             pages=pages,
-            session_id=request.session_id,
+            session_id=session_id,
         )
         return ChatResponse(
             session_id=result.session_id,

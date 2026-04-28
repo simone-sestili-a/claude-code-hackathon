@@ -11,6 +11,38 @@ from pathlib import Path
 import fitz  # PyMuPDF
 
 
+def pdf_bytes_to_pages(pdf_bytes: bytes) -> list[dict]:
+    """Extract raw text from each page of a PDF provided as bytes.
+
+    Suitable for converting an uploaded PDF into the page-text format expected
+    by the document processing pipeline: [{"page_number": N, "text": raw_text}, ...].
+
+    Args:
+        pdf_bytes: Raw PDF file contents.
+
+    Returns:
+        List of dicts with page_number (1-based) and text, one per page.
+        Empty list if the PDF has no pages.
+
+    Raises:
+        ValueError: If pdf_bytes is not valid PDF data.
+    """
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    except fitz.FileDataError as exc:
+        raise ValueError("Cannot open as PDF") from exc
+
+    pages: list[dict] = []
+    try:
+        for i in range(doc.page_count):
+            text = doc.load_page(i).get_text()
+            pages.append({"page_number": i + 1, "text": text})
+    finally:
+        doc.close()
+
+    return pages
+
+
 def render_page(doc: fitz.Document, page_index: int, output_dir: str) -> str:
     """Render a single PDF page to a PNG file.
 
