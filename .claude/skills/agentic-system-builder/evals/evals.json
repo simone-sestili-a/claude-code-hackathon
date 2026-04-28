@@ -1,0 +1,132 @@
+[
+  {
+    "prompt": "Build an agentic IT helpdesk triage system. It should receive inbound requests via REST API, classify them into IT/HR/SECURITY/FACILITIES, enrich with priority and SLA, and route to the right queue. It must never auto-close SECURITY tickets and must never act on frozen accounts.",
+    "assertions": [
+      {
+        "type": "contains",
+        "value": "ClaudeSDKClient",
+        "description": "Uses ClaudeSDKClient for coordinator"
+      },
+      {
+        "type": "contains",
+        "value": "AgentDefinition",
+        "description": "Defines specialist subagents"
+      },
+      {
+        "type": "contains",
+        "value": "FastAPI",
+        "description": "Generates FastAPI REST layer"
+      },
+      {
+        "type": "contains",
+        "value": "pre_tool_use",
+        "description": "Generates hook for hard constraints"
+      },
+      {
+        "type": "contains",
+        "value": "pyproject.toml",
+        "description": "Generates pyproject.toml"
+      },
+      {
+        "type": "contains",
+        "value": "CLAUDE.md",
+        "description": "Generates CLAUDE.md"
+      },
+      {
+        "type": "not_contains",
+        "value": "can_use_tool",
+        "description": "Does not use deprecated can_use_tool"
+      },
+      {
+        "type": "not_contains",
+        "value": "allowedTools",
+        "description": "Uses snake_case not camelCase"
+      }
+    ]
+  },
+  {
+    "prompt": "I need an agent that processes insurance claim PDFs, extracts structured data (claimant, date, amount, type), validates completeness, and flags suspicious patterns for human review before writing to the database. Build it with Claude Agent SDK and a FastAPI API.",
+    "assertions": [
+      {
+        "type": "contains",
+        "value": "send_query",
+        "description": "Generates the core send_query function"
+      },
+      {
+        "type": "contains",
+        "value": "async with ClaudeSDKClient",
+        "description": "Uses context manager correctly"
+      },
+      {
+        "type": "contains",
+        "value": "asyncio.timeout",
+        "description": "Includes timeout wrapper to prevent disconnect hang"
+      },
+      {
+        "type": "contains",
+        "value": "Task",
+        "description": "Includes Task in allowed_tools for subagent delegation"
+      },
+      {
+        "type": "contains",
+        "value": "@tool",
+        "description": "Uses @tool decorator for custom tools if tools are defined"
+      },
+      {
+        "type": "contains",
+        "value": "HookMatcher",
+        "description": "Uses HookMatcher for permission enforcement"
+      },
+      {
+        "type": "question_asks_user",
+        "value": "domain|purpose|input|output|constraint|validation",
+        "description": "Interviews user before generating (or generates from the description given)"
+      }
+    ]
+  },
+  {
+    "prompt": "Create an agentic sales qualification system. Inbound leads come in via API (name, company, description). A classifier subagent scores them hot/warm/cold. A researcher subagent enriches with company info. An enriched lead goes to CRM. Disqualified leads get a polite rejection draft (human sends it). Stack: Python, Claude Agent SDK, FastAPI.",
+    "assertions": [
+      {
+        "type": "contains",
+        "value": "classifier",
+        "description": "Names a classifier subagent"
+      },
+      {
+        "type": "contains",
+        "value": "agent.py",
+        "description": "Generates agent.py"
+      },
+      {
+        "type": "contains",
+        "value": "api.py",
+        "description": "Generates api.py"
+      },
+      {
+        "type": "contains",
+        "value": "GET /",
+        "description": "Includes health check endpoint"
+      },
+      {
+        "type": "contains",
+        "value": "POST /query",
+        "description": "Includes query endpoint"
+      },
+      {
+        "type": "contains",
+        "value": "Pydantic",
+        "description": "Uses Pydantic v2 models"
+      },
+      {
+        "type": "not_contains",
+        "value": "from anthropic import",
+        "description": "Imports from claude_code_sdk not anthropic"
+      },
+      {
+        "type": "contains",
+        "value": "make test",
+        "description": "Includes verification step before declaring done"
+      }
+    ]
+  }
+]
