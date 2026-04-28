@@ -13,6 +13,8 @@ import jinja2
 import yaml
 from claude_code_sdk import ClaudeCodeOptions, ResultMessage, query
 
+import src.config as config  # ensures ANTHROPIC_API_KEY mapping runs at import time
+
 _JINJA_ENV = jinja2.Environment(
     undefined=jinja2.StrictUndefined,
     keep_trailing_newline=True,
@@ -52,11 +54,15 @@ class PromptTemplate:
 logger = logging.getLogger(__name__)
 
 
+def _default_model() -> str:
+    return config.DEFAULT_MODEL
+
+
 @dataclass
 class SpecialistDef:
     description: str
     prompt: str
-    model: str
+    model: str = field(default_factory=_default_model)
     disallowed_tools: list[str] = field(default_factory=list)
 
 

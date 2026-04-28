@@ -16,6 +16,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+import src.config as config
 from src.flows import get_flow, get_flow_routing_info
 from src.utils import PromptTemplate, SpecialistDef, parse_json_result, run_specialist
 
@@ -28,7 +29,7 @@ _CLASSIFIER_PROMPT = PromptTemplate.from_path(
 _CLASSIFIER = SpecialistDef(
     description="Intent classifier — routes user messages to the correct flow",
     prompt=_CLASSIFIER_PROMPT.system,
-    model="claude-haiku-4-5-20251001",
+    model=config.HAIKU_MODEL,
 )
 
 _FALLBACK_MESSAGE = (

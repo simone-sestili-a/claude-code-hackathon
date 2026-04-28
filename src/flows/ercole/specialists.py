@@ -8,11 +8,12 @@ The file is split at {# === USER INPUT BELOW === #} into:
 
 from __future__ import annotations
 
+import src.config as config
 from src.flows.ercole.prompts import load_prompt
 from src.utils import SpecialistDef
 
-_SONNET = "claude-sonnet-4-6"
-_HAIKU = "claude-haiku-4-5-20251001"
+_HAIKU = config.HAIKU_MODEL
+_SONNET = config.SONNET_MODEL
 
 _doc_reader = load_prompt("document_reader.j2")
 _task_recognizer = load_prompt("task_recognizer.j2")
@@ -29,25 +30,25 @@ DOCUMENT_READER = SpecialistDef(
 TASK_RECOGNIZER = SpecialistDef(
     description="Identifies Ercole pension fund module requests from aggregated page metadata",
     prompt=_task_recognizer.system,
-    model=_SONNET,
+    model=_HAIKU,
 )
 
 WORKER = SpecialistDef(
     description="Assigns document pages to identified requests (page allocator)",
     prompt=_worker.system,
-    model=_SONNET,
+    model=_HAIKU,
 )
 
 SUMMARIZER = SpecialistDef(
     description="Generates a structured markdown report from extracted requests and page assignments",
     prompt=_summarizer.system,
-    model=_SONNET,
+    model=_HAIKU,
 )
 
 FOLLOW_UP_AGENT = SpecialistDef(
     description="Answers follow-up questions about a previously processed Ercole document",
     prompt=_follow_up_agent.system,
-    model=_SONNET,
+    model=_HAIKU,
 )
 
 
