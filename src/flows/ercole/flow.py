@@ -169,6 +169,16 @@ def _parse_worker_output(
 
 class ErcoleFlow(BaseFlow):
     flow_type = "ercole"
+    description = (
+        "Processa documenti del fondo pensione Ercole: identifica moduli e richieste, "
+        "estrae dati anagrafici dei contatti, assegna le pagine a ciascuna richiesta "
+        "e produce un report strutturato."
+    )
+    routing_hints = [
+        "fondo pensione", "ercole", "modulo", "adesione", "anticipazione",
+        "riscatto", "trasferimento posizione", "contribuzione", "nota informativa",
+        "pegaso", "tfr", "premorienza", "pensionistico", "comparto",
+    ]
 
     async def run(self, pages: list[dict]) -> DocumentProcessingResponse:
         session_id = str(uuid.uuid4())

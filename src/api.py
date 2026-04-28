@@ -51,6 +51,20 @@ class FollowUpResponse(BaseModel):
     answer: str
 
 
+class ChatRequest(BaseModel):
+    message: str
+    pages: list[PageInput] | None = None
+    session_id: str | None = None
+
+
+class ChatResponse(BaseModel):
+    session_id: str | None = None
+    flow_type: str | None = None
+    intent: str
+    response: str
+    document_result: dict | None = None
+
+
 @app.get("/")
 async def health() -> dict[str, str]:
     return {"status": "ok", "service": "document-ai"}
@@ -81,3 +95,28 @@ async def process_document(request: ProcessDocumentRequest) -> DocumentProcessin
 async def follow_up(request: FollowUpRequest) -> FollowUpResponse:
     answer = await agent.handle_followup(request.session_id, request.question)
     return FollowUpResponse(session_id=request.session_id, answer=answer)
+
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest) -> ChatResponse:
+    pages = (
+        [{"page_number": p.page_number, "text": p.text} for p in request.pages]
+        if request.pages
+        else None
+    )
+    try:
+        result = await agent.handle_chat_message(
+            message=request.message,
+            pages=pages,
+            session_id=request.session_id,
+        )
+        return ChatResponse(
+            session_id=result.session_id,
+            flow_type=result.flow_type,
+            intent=result.intent,
+            response=result.response,
+            document_result=result.document_result,
+        )
+    except Exception as exc:
+        logger.exception("Chat message handling failed")
+        raise HTTPException(status_code=500, detail=f"Chat failed: {exc}")

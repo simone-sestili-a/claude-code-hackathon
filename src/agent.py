@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from src.coordinator.document_coordinator import CoordinatorResponse, handle_message
 from src.flows import get_flow, list_flows
 from src.schemas.document import DocumentProcessingResponse
 
@@ -48,3 +49,12 @@ async def handle_followup(session_id: str, question: str) -> str:
 
 def get_available_flows() -> list[str]:
     return list_flows()
+
+
+async def handle_chat_message(
+    message: str,
+    pages: list[dict] | None = None,
+    session_id: str | None = None,
+) -> CoordinatorResponse:
+    """Main chat entry point — classifies intent and routes to the correct flow."""
+    return await handle_message(message, pages=pages, session_id=session_id)

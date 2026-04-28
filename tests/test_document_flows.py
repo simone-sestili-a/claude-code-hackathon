@@ -328,3 +328,88 @@ def test_build_follow_up_message():
     assert "Quante richieste ci sono?" in msg
     assert "{{ analysis_context }}" not in msg
     assert "{{ question }}" not in msg
+
+
+# ---------------------------------------------------------------------------
+# Coordinator tests
+# ---------------------------------------------------------------------------
+
+
+def test_coordinator_classifier_prompt_loads():
+    """Classifier prompt must have a system part and a user template."""
+    from src.coordinator.document_coordinator import _CLASSIFIER_PROMPT
+
+    assert len(_CLASSIFIER_PROMPT.system) > 100
+    assert "{{ user_message }}" not in _CLASSIFIER_PROMPT.system  # var in user template
+    user_msg = _CLASSIFIER_PROMPT.render_user(
+        user_message="test",
+        has_pages=False,
+        has_session=False,
+        available_flows=[],
+    )
+    assert "test" in user_msg
+    assert "{{ user_message }}" not in user_msg
+
+
+def test_coordinator_classifier_prompt_renders_flows():
+    """Available flows must appear in the rendered user message."""
+    from src.coordinator.document_coordinator import _CLASSIFIER_PROMPT
+
+    flows = [{"flow_type": "ercole", "description": "Test desc", "hints": ["hint1", "hint2"]}]
+    user_msg = _CLASSIFIER_PROMPT.render_user(
+        user_message="Voglio elaborare un modulo",
+        has_pages=True,
+        has_session=False,
+        available_flows=flows,
+    )
+    assert "ercole" in user_msg
+    assert "hint1" in user_msg
+
+
+def test_classification_result_defaults():
+    """ClassificationResult must default to off_topic."""
+    from src.coordinator.document_coordinator import ClassificationResult
+
+    r = ClassificationResult()
+    assert r.intent == "off_topic"
+    assert r.flow_type is None
+    assert r.confidence == 0
+
+
+def test_coordinator_response_model():
+    """CoordinatorResponse must round-trip correctly."""
+    from src.coordinator.document_coordinator import CoordinatorResponse
+
+    r = CoordinatorResponse(intent="off_topic", response="Mi dispiace...")
+    assert r.session_id is None
+    assert r.flow_type is None
+    assert r.document_result is None
+
+
+def test_coordinator_fallback_message_is_italian():
+    """Fallback message must be in Italian and mention Ercole."""
+    from src.coordinator.document_coordinator import _FALLBACK_MESSAGE
+
+    assert "Ercole" in _FALLBACK_MESSAGE or "ercole" in _FALLBACK_MESSAGE.lower()
+    assert len(_FALLBACK_MESSAGE) > 50
+
+
+def test_classifier_specialist_uses_haiku():
+    """Classifier must use the lightweight Haiku model, not Sonnet or Opus."""
+    from src.coordinator.document_coordinator import _CLASSIFIER
+
+    assert "haiku" in _CLASSIFIER.model.lower()
+
+
+def test_flow_routing_info_for_coordinator():
+    """get_flow_routing_info() must return data the coordinator classifier can use."""
+    from src.flows import get_flow_routing_info
+
+    info = get_flow_routing_info()
+    assert isinstance(info, list)
+    assert len(info) >= 1
+    first = info[0]
+    assert "flow_type" in first
+    assert "description" in first
+    assert "hints" in first
+    assert isinstance(first["hints"], list)

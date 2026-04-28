@@ -1,38 +1,14 @@
-"""Jinja2 prompt template loader for Ercole specialists.
-
-Each .j2 file contains two sections separated by a marker comment:
-  - Everything before {# === USER INPUT BELOW === #} → system prompt (static)
-  - Everything after → user message template (rendered per-call with {{ variable }} placeholders)
-"""
+"""Prompt loader for Ercole specialists — thin wrapper around src.utils.PromptTemplate."""
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
-import jinja2
+from src.utils import PromptTemplate
 
-_SPLIT_MARKER = "{# === USER INPUT BELOW === #}"
-_ENV = jinja2.Environment(undefined=jinja2.StrictUndefined, keep_trailing_newline=True)
+_PROMPTS_DIR = Path(__file__).parent
 
 
-class PromptTemplate:
-    def __init__(self, path: Path) -> None:
-        text = path.read_text(encoding="utf-8")
-        if _SPLIT_MARKER in text:
-            system_part, user_part = text.split(_SPLIT_MARKER, 1)
-            self.system = system_part.strip()
-            self._user_template = user_part.strip()
-        else:
-            self.system = text.strip()
-            self._user_template = ""
-
-    def render_user(self, **kwargs: Any) -> str:
-        if not self._user_template:
-            return ""
-        return _ENV.from_string(self._user_template).render(**kwargs)
-
-    @classmethod
-    def load(cls, name: str) -> "PromptTemplate":
-        path = Path(__file__).parent / name
-        return cls(path)
+def load_prompt(name: str) -> PromptTemplate:
+    """Load a .j2 prompt file from the Ercole prompts directory."""
+    return PromptTemplate.from_path(_PROMPTS_DIR / name)

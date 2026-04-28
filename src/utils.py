@@ -6,10 +6,48 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
+import jinja2
 import yaml
 from claude_code_sdk import ClaudeCodeOptions, ResultMessage, query
+
+_JINJA_ENV = jinja2.Environment(
+    undefined=jinja2.StrictUndefined,
+    keep_trailing_newline=True,
+)
+
+_SPLIT_MARKER = "{# === USER INPUT BELOW === #}"
+
+
+class PromptTemplate:
+    """Loads a .j2 file and exposes system prompt + per-call user-message rendering.
+
+    The file is split at {# === USER INPUT BELOW === #} (a Jinja2 comment that
+    renders to nothing, so it acts as a pure marker before rendering):
+      - Everything before the marker → system prompt (static, loaded at import time)
+      - Everything after → user message template (rendered per-call via Jinja2)
+    """
+
+    def __init__(self, path: Path) -> None:
+        text = path.read_text(encoding="utf-8")
+        if _SPLIT_MARKER in text:
+            system_part, user_part = text.split(_SPLIT_MARKER, 1)
+            self.system = system_part.strip()
+            self._user_template = user_part.strip()
+        else:
+            self.system = text.strip()
+            self._user_template = ""
+
+    def render_user(self, **kwargs: Any) -> str:
+        if not self._user_template:
+            return ""
+        return _JINJA_ENV.from_string(self._user_template).render(**kwargs)
+
+    @classmethod
+    def from_path(cls, path: Path) -> "PromptTemplate":
+        return cls(path)
 
 logger = logging.getLogger(__name__)
 

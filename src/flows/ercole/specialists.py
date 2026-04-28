@@ -8,17 +8,17 @@ The file is split at {# === USER INPUT BELOW === #} into:
 
 from __future__ import annotations
 
-from src.flows.ercole.prompts import PromptTemplate
+from src.flows.ercole.prompts import load_prompt
 from src.utils import SpecialistDef
 
 _SONNET = "claude-sonnet-4-6"
 _HAIKU = "claude-haiku-4-5-20251001"
 
-_doc_reader = PromptTemplate.load("document_reader.j2")
-_task_recognizer = PromptTemplate.load("task_recognizer.j2")
-_worker = PromptTemplate.load("worker.j2")
-_summarizer = PromptTemplate.load("summarizer.j2")
-_follow_up_agent = PromptTemplate.load("follow_up_agent.j2")
+_doc_reader = load_prompt("document_reader.j2")
+_task_recognizer = load_prompt("task_recognizer.j2")
+_worker = load_prompt("worker.j2")
+_summarizer = load_prompt("summarizer.j2")
+_follow_up_agent = load_prompt("follow_up_agent.j2")
 
 DOCUMENT_READER = SpecialistDef(
     description="Extracts structured metadata (header, summary, entities, fields) from a single document page",
