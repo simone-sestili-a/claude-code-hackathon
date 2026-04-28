@@ -64,6 +64,10 @@ class SpecialistDef:
     prompt: str
     model: str = field(default_factory=_default_model)
     disallowed_tools: list[str] = field(default_factory=list)
+    # MCP server config — {server_name: McpSdkServerConfig} returned by build_document_tools_server()
+    mcp_servers: dict = field(default_factory=dict)
+    # Explicit list of MCP tool names this specialist may call (empty = no restriction)
+    allowed_tools: list[str] = field(default_factory=list)
 
 
 def parse_json_result(text: str | None) -> dict[str, Any]:
@@ -109,6 +113,8 @@ async def run_specialist(
         system_prompt=spec.prompt,
         permission_mode="bypassPermissions",
         max_turns=5,
+        mcp_servers=spec.mcp_servers,
+        allowed_tools=spec.allowed_tools,
     )
     result: str | None = None
     async with asyncio.timeout(timeout_seconds):
