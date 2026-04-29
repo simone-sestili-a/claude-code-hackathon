@@ -2,6 +2,8 @@
 
 Multi-agent pipeline for automated processing of Italian pension fund documents. Classifies incoming requests, routes them through a specialist pipeline (Document Reader → Task Recognizer → Worker → Summarizer), and exposes the result via a REST API with PDF upload support.
 
+A full-featured **web frontend** is included in [`frontend/`](./frontend/) — built with Next.js 14, Tailwind CSS, and shadcn/ui.
+
 Built with **Claude Agent SDK** · **FastAPI** · **Python 3.12** · **uv**
 
 ---
@@ -11,9 +13,10 @@ Built with **Claude Agent SDK** · **FastAPI** · **Python 3.12** · **uv**
 ### Prerequisites
 
 - Python 3.12+
+- Node.js 18+ (for the frontend)
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) — `curl -LsSf https://astral.sh/uv/install.sh | sh`
 
-### 1. Install dependencies
+### 1. Install backend dependencies
 
 ```bash
 uv sync
@@ -48,8 +51,21 @@ ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus
 uv run uvicorn src.api:app --reload --port 8000
 ```
 
-The API is now available at `http://localhost:8000`.  
+The API is now available at `http://localhost:8000`.
 Interactive docs: `http://localhost:8000/docs`
+
+### 4. Start the frontend (optional)
+
+```bash
+cd frontend
+npm install
+cp .env.example .env.local   # sets NEXT_PUBLIC_API_URL=http://localhost:8000
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+See [`frontend/README.md`](./frontend/README.md) for full frontend documentation.
 
 ---
 

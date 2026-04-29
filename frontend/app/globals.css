@@ -1,0 +1,152 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Warm amber-ochre accent — breaks financial-blue reflex */
+  --color-accent:          oklch(42% 0.145 65);
+  --color-accent-hover:    oklch(35% 0.145 65);
+  --color-accent-fg:       oklch(97.5% 0.008 70);
+  --color-accent-subtle:   oklch(94% 0.035 68);
+  --color-accent-muted:    oklch(97% 0.018 68);
+
+  /* Warm parchment neutrals — tinted toward brand amber */
+  --color-bg:              oklch(97.5% 0.008 70);
+  --color-surface:         oklch(99.5% 0.005 70);
+  --color-sidebar:         oklch(95% 0.012 70);
+  --color-sidebar-active:  oklch(91% 0.025 70);
+
+  /* Borders */
+  --color-border:          oklch(88% 0.014 70);
+  --color-border-subtle:   oklch(92% 0.010 70);
+
+  /* Text */
+  --color-text:            oklch(16% 0.018 70);
+  --color-text-secondary:  oklch(44% 0.018 70);
+  --color-text-tertiary:   oklch(62% 0.014 70);
+
+  /* Semantic */
+  --color-success:         oklch(44% 0.150 145);
+  --color-success-bg:      oklch(95% 0.040 145);
+  --color-warning:         oklch(52% 0.160 70);
+  --color-warning-bg:      oklch(95% 0.045 70);
+  --color-error:           oklch(48% 0.200 25);
+  --color-error-bg:        oklch(96% 0.040 25);
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html,
+body {
+  height: 100%;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+body {
+  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  font-size: 1rem;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Respect user motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Scrollbar styling — warm, subtle */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-tertiary);
+}
+
+/* Markdown content in document summaries */
+.prose-document {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: var(--color-text);
+  max-width: 68ch;
+}
+
+.prose-document h1,
+.prose-document h2,
+.prose-document h3 {
+  font-weight: 600;
+  color: var(--color-text);
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.prose-document h1 { font-size: 1.125rem; }
+.prose-document h2 { font-size: 1rem; }
+.prose-document h3 { font-size: 0.9375rem; }
+
+.prose-document p {
+  margin-bottom: 0.75rem;
+}
+
+.prose-document ul,
+.prose-document ol {
+  margin-left: 1.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.prose-document li {
+  margin-bottom: 0.25rem;
+}
+
+.prose-document strong {
+  font-weight: 600;
+}
+
+.prose-document table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.prose-document th,
+.prose-document td {
+  padding: 0.4rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.prose-document th {
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.prose-document code {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.875em;
+  background: var(--color-accent-muted);
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+}
