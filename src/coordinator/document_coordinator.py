@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Any, Literal
 
@@ -73,6 +74,7 @@ async def _classify(
     has_pages: bool,
     has_session: bool,
 ) -> ClassificationResult:
+    start = time.monotonic()
     available_flows = get_flow_routing_info()
     user_msg = _CLASSIFIER_PROMPT.render_user(
         user_message=user_message,
@@ -83,9 +85,15 @@ async def _classify(
     raw = await run_specialist(_CLASSIFIER, user_msg, timeout_seconds=30)
     data = parse_json_result(raw)
     try:
-        return ClassificationResult(**data)
+        result = ClassificationResult(**data)
+        logger.debug("Classifier raw output (%.0f ms): %r", (time.monotonic() - start) * 1000, raw)
+        return result
     except Exception:
-        logger.warning("Classification parse failed for raw=%r, defaulting to off_topic", raw)
+        logger.warning(
+            "Classification parse failed (%.0f ms) raw=%r, defaulting to off_topic",
+            (time.monotonic() - start) * 1000,
+            raw,
+        )
         return ClassificationResult(flow_type=None, intent="off_topic", confidence=0)
 
 
@@ -101,6 +109,13 @@ async def handle_message(
 ) -> CoordinatorResponse:
     has_pages = bool(pages)
     has_session = session_id is not None and session_id in _SESSION_STORE
+    logger.info(
+        "handle_message: session=%s has_pages=%s has_session=%s msg_len=%d",
+        session_id or "new",
+        has_pages,
+        has_session,
+        len(user_message),
+    )
 
     classification = await _classify(user_message, has_pages, has_session)
     logger.info(
@@ -112,6 +127,7 @@ async def handle_message(
 
     # --- Off-topic ---
     if classification.intent == "off_topic" or classification.flow_type is None:
+        logger.info("Routing: off_topic → fallback response")
         return CoordinatorResponse(
             flow_type=None,
             intent="off_topic",
@@ -124,6 +140,9 @@ async def handle_message(
     if classification.intent == "follow_up":
         session = _SESSION_STORE.get(session_id or "")
         if session:
+            logger.info(
+                "Routing: follow_up → flow=%s session=%s", classification.flow_type, session_id
+            )
             answer = await flow.handle_followup(
                 session_id=session_id or "",
                 question=user_message,
@@ -136,6 +155,11 @@ async def handle_message(
                 response=answer,
             )
         # No session found — treat as new_document if pages present, else ambiguous
+        logger.warning(
+            "follow_up intent but session not found: session_id=%s has_pages=%s",
+            session_id,
+            has_pages,
+        )
         if not has_pages:
             return CoordinatorResponse(
                 flow_type=classification.flow_type,
@@ -149,6 +173,7 @@ async def handle_message(
 
     # --- New document processing ---
     if not pages:
+        logger.warning("new_document intent but no pages provided: flow=%s", classification.flow_type)
         return CoordinatorResponse(
             flow_type=classification.flow_type,
             intent="new_document",
@@ -159,11 +184,18 @@ async def handle_message(
             ),
         )
 
+    logger.info("Routing: new_document → flow=%s pages=%d", classification.flow_type, len(pages))
     result = await flow.run(pages)
     _SESSION_STORE[result.session_id] = {
         "flow_type": classification.flow_type,
         "result": result.model_dump(),
     }
+    logger.info(
+        "Session stored: session=%s flow=%s sessions_total=%d",
+        result.session_id,
+        classification.flow_type,
+        len(_SESSION_STORE),
+    )
     return CoordinatorResponse(
         session_id=result.session_id,
         flow_type=classification.flow_type,

@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 import uuid
 from typing import Any
 
@@ -182,9 +183,12 @@ class ErcoleFlow(BaseFlow):
 
     async def run(self, pages: list[dict]) -> DocumentProcessingResponse:
         session_id = str(uuid.uuid4())
+        pipeline_start = time.monotonic()
+        logger.info("Pipeline start: session=%s pages=%d", session_id, len(pages))
 
         # Step 1: Document Reader — one specialist per page, in parallel
-        logger.info("Step 1: Document Reader (%d pages)", len(pages))
+        step_start = time.monotonic()
+        logger.info("Step 1/4 Document Reader: processing %d page(s) in parallel", len(pages))
         dr_results = await asyncio.gather(
             *[
                 run_specialist(
@@ -198,9 +202,17 @@ class ErcoleFlow(BaseFlow):
             _parse_page_extraction(parse_json_result(raw), p["page_number"])
             for p, raw in zip(pages, dr_results)
         ]
+        headers_found = [p.header for p in page_extractions if p.header]
+        logger.info(
+            "Step 1/4 done (%.0f ms): extracted %d page(s), headers=%s",
+            (time.monotonic() - step_start) * 1000,
+            len(page_extractions),
+            headers_found or "none",
+        )
 
         # Step 2: Task Recognizer — single call on aggregated page info
-        logger.info("Step 2: Task Recognizer")
+        step_start = time.monotonic()
+        logger.info("Step 2/4 Task Recognizer")
         pages_yaml = _pages_information_yaml(page_extractions)
         tr_raw = await run_specialist(TASK_RECOGNIZER, build_task_recognizer_message(pages_yaml))
         tr_data = parse_yaml_result(tr_raw)
@@ -214,21 +226,37 @@ class ErcoleFlow(BaseFlow):
             ext = tr_data.get("external_modules", [])
             if isinstance(ext, list):
                 top_level_external = [str(e) for e in ext]
+        logger.info(
+            "Step 2/4 done (%.0f ms): identified %d request(s), %d external module(s)",
+            (time.monotonic() - step_start) * 1000,
+            len(ercole_requests),
+            len(top_level_external),
+        )
+        if not ercole_requests:
+            logger.warning("Task Recognizer found no requests — raw output: %r", tr_raw)
 
         # Step 3: Worker — assign pages to each identified request
-        logger.info("Step 3: Worker (page allocator)")
+        step_start = time.monotonic()
+        logger.info("Step 3/4 Worker (page allocator): %d request(s)", len(ercole_requests))
         worker_msg = build_worker_message(
             llm_instructions=tr_raw or "",
             attachment_metadata=_attachment_metadata_yaml(page_extractions),
         )
         w_raw = await run_specialist(WORKER, worker_msg)
         w_data = parse_yaml_result(w_raw)
-        page_assignments, _ = _parse_worker_output(
+        page_assignments, excluded = _parse_worker_output(
             w_data if isinstance(w_data, dict) else {}
+        )
+        logger.info(
+            "Step 3/4 done (%.0f ms): %d assignment(s)%s",
+            (time.monotonic() - step_start) * 1000,
+            len(page_assignments),
+            f", excluded_pages={excluded.pages}" if excluded and excluded.pages else "",
         )
 
         # Step 4: Summarizer — produce markdown report
-        logger.info("Step 4: Summarizer")
+        step_start = time.monotonic()
+        logger.info("Step 4/4 Summarizer")
         summary_ctx = {
             "total_pages": len(pages),
             "requests": [r.model_dump() for r in ercole_requests],
@@ -239,6 +267,19 @@ class ErcoleFlow(BaseFlow):
             SUMMARIZER,
             build_summarizer_message(json.dumps(summary_ctx, indent=2, ensure_ascii=False)),
         ) or ""
+        logger.info(
+            "Step 4/4 done (%.0f ms): summary_len=%d",
+            (time.monotonic() - step_start) * 1000,
+            len(summary_text),
+        )
+
+        total_ms = (time.monotonic() - pipeline_start) * 1000
+        logger.info(
+            "Pipeline complete: session=%s requests=%d total=%.0f ms",
+            session_id,
+            len(ercole_requests),
+            total_ms,
+        )
 
         return DocumentProcessingResponse(
             session_id=session_id,
@@ -253,6 +294,7 @@ class ErcoleFlow(BaseFlow):
     async def handle_followup(
         self, session_id: str, question: str, context: dict
     ) -> str:
+        logger.info("Followup: session=%s question_len=%d", session_id, len(question))
         result = await run_specialist(
             FOLLOW_UP_AGENT,
             build_follow_up_message(
@@ -260,4 +302,6 @@ class ErcoleFlow(BaseFlow):
                 question=question,
             ),
         )
+        if not result:
+            logger.warning("Followup agent returned no output: session=%s", session_id)
         return result or "Unable to answer the question based on the available context."

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -273,11 +274,18 @@ def _execute_tool(name: str, input_args: dict) -> str:
     _ensure_tool_registry()
     fn = _TOOL_REGISTRY.get(name)
     if fn is None:
+        logger.warning("Unknown tool requested: %s", name)
         return json.dumps({"isError": True, "error": f"Unknown tool: {name}"})
+    start = time.monotonic()
+    logger.debug("Tool call: %s args=%s", name, list(input_args.keys()))
     try:
-        return fn(input_args)
+        result = fn(input_args)
+        elapsed_ms = (time.monotonic() - start) * 1000
+        logger.debug("Tool %s ok (%.0f ms) result_len=%d", name, elapsed_ms, len(result))
+        return result
     except Exception as exc:
-        logger.warning("Tool %s failed: %s", name, exc)
+        elapsed_ms = (time.monotonic() - start) * 1000
+        logger.warning("Tool %s FAILED (%.0f ms): %s", name, elapsed_ms, exc)
         return json.dumps({"isError": True, "error": str(exc)})
 
 
@@ -296,41 +304,84 @@ async def run_specialist(
                 tools.append(_TOOL_DEFINITIONS[tool_name])
 
     messages: list[dict] = [{"role": "user", "content": prompt}]
+    specialist_name = spec.description.split("—")[0].strip() if "—" in spec.description else spec.description[:40]
+    start = time.monotonic()
+    turn = 0
+    logger.info(
+        "Specialist start: %r model=%s tools=%s",
+        specialist_name,
+        spec.model,
+        spec.allowed_tools or "none",
+    )
 
-    async with asyncio.timeout(timeout_seconds):
-        for _ in range(max_turns):
-            kwargs: dict[str, Any] = {
-                "model": spec.model,
-                "max_tokens": 4096,
-                "system": spec.prompt,
-                "messages": messages,
-            }
-            if tools:
-                kwargs["tools"] = tools
+    try:
+        async with asyncio.timeout(timeout_seconds):
+            for _ in range(max_turns):
+                turn += 1
+                kwargs: dict[str, Any] = {
+                    "model": spec.model,
+                    "max_tokens": 4096,
+                    "system": spec.prompt,
+                    "messages": messages,
+                }
+                if tools:
+                    kwargs["tools"] = tools
 
-            response = await client.messages.create(**kwargs)
+                response = await client.messages.create(**kwargs)
 
-            # Extract text from the response
-            if response.stop_reason == "tool_use":
-                # Process tool calls
-                messages.append({"role": "assistant", "content": response.content})
-                tool_results = []
+                if response.stop_reason == "tool_use":
+                    tool_names = [b.name for b in response.content if b.type == "tool_use"]
+                    logger.debug(
+                        "Specialist %r turn %d: tool_use %s",
+                        specialist_name,
+                        turn,
+                        tool_names,
+                    )
+                    messages.append({"role": "assistant", "content": response.content})
+                    tool_results = []
+                    for block in response.content:
+                        if block.type == "tool_use":
+                            result_text = _execute_tool(block.name, block.input)
+                            tool_results.append({
+                                "type": "tool_result",
+                                "tool_use_id": block.id,
+                                "content": result_text,
+                            })
+                    messages.append({"role": "user", "content": tool_results})
+                    continue
+
+                # End turn — extract final text
+                text_parts = []
                 for block in response.content:
-                    if block.type == "tool_use":
-                        result_text = _execute_tool(block.name, block.input)
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": result_text,
-                        })
-                messages.append({"role": "user", "content": tool_results})
-                continue
-
-            # End turn — extract final text
-            text_parts = []
-            for block in response.content:
-                if hasattr(block, "text"):
-                    text_parts.append(block.text)
-            return "\n".join(text_parts) if text_parts else None
+                    if hasattr(block, "text"):
+                        text_parts.append(block.text)
+                output = "\n".join(text_parts) if text_parts else None
+                elapsed_ms = (time.monotonic() - start) * 1000
+                logger.info(
+                    "Specialist done: %r turns=%d elapsed=%.0f ms output_len=%d",
+                    specialist_name,
+                    turn,
+                    elapsed_ms,
+                    len(output or ""),
+                )
+                return output
+    except asyncio.TimeoutError:
+        elapsed_ms = (time.monotonic() - start) * 1000
+        logger.error(
+            "Specialist TIMEOUT: %r model=%s elapsed=%.0f ms",
+            specialist_name,
+            spec.model,
+            elapsed_ms,
+        )
+        raise
+    except Exception:
+        elapsed_ms = (time.monotonic() - start) * 1000
+        logger.exception(
+            "Specialist ERROR: %r model=%s elapsed=%.0f ms",
+            specialist_name,
+            spec.model,
+            elapsed_ms,
+        )
+        raise
 
     return None

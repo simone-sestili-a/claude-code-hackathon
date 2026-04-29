@@ -20,16 +20,23 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+import uuid
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
+from typing import Any
 
 from src import agent
+from src.logging_config import configure_logging, set_request_id
 from src.schemas.document import DocumentProcessingResponse
 from src.tools.pdf_tools import pdf_bytes_to_pages
 
-logging.basicConfig(level=logging.INFO)
+configure_logging()
 logger = logging.getLogger(__name__)
 
 
@@ -45,6 +52,36 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class _RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """Assigns a short request ID to every request and logs timing."""
+
+    async def dispatch(self, request: Request, call_next: Any) -> Response:
+        rid = uuid.uuid4().hex[:8]
+        set_request_id(rid)
+        start = time.monotonic()
+        logger.info("→ %s %s", request.method, request.url.path)
+        try:
+            response = await call_next(request)
+            elapsed_ms = (time.monotonic() - start) * 1000
+            logger.info(
+                "← %s %s %d (%.0f ms)",
+                request.method,
+                request.url.path,
+                response.status_code,
+                elapsed_ms,
+            )
+            return response
+        except Exception:
+            elapsed_ms = (time.monotonic() - start) * 1000
+            logger.exception(
+                "← %s %s ERROR (%.0f ms)", request.method, request.url.path, elapsed_ms
+            )
+            raise
+
+
+app.add_middleware(_RequestLoggingMiddleware)
 
 
 # ---------------------------------------------------------------------------
@@ -93,19 +130,26 @@ async def _build_pages(
 
     if pdf is not None:
         pdf_bytes = await pdf.read()
+        size_kb = len(pdf_bytes) / 1024
         if not pdf_bytes:
             raise HTTPException(status_code=400, detail="Uploaded PDF file is empty")
+        logger.info("PDF upload: filename=%s size=%.1f KB", pdf.filename, size_kb)
         try:
-            for p in pdf_bytes_to_pages(pdf_bytes):
+            extracted = pdf_bytes_to_pages(pdf_bytes)
+            logger.info("PDF extracted: %d pages from %s", len(extracted), pdf.filename)
+            for p in extracted:
                 pages[p["page_number"]] = p
         except ValueError as exc:
+            logger.error("PDF extraction failed: filename=%s error=%s", pdf.filename, exc)
             raise HTTPException(status_code=400, detail=f"Invalid PDF: {exc}")
 
     if pages_json is not None:
         try:
             parsed: list[dict] = json.loads(pages_json)
         except json.JSONDecodeError as exc:
+            logger.warning("Invalid pages_json: %s", exc)
             raise HTTPException(status_code=400, detail=f"pages_json is not valid JSON: {exc}")
+        logger.debug("pages_json override: %d page(s)", len(parsed))
         for p in parsed:
             pages[p["page_number"]] = p
 
@@ -162,16 +206,24 @@ async def process_document(
             status_code=422,
             detail="Provide at least one page: upload a pdf file or pass pages_json.",
         )
+    logger.info("process-document: flow=%s pages=%d", flow_type, len(pages))
     try:
-        return await agent.process_document(
+        result = await agent.process_document(
             pages=pages,
             flow_type=flow_type,
             session_id=session_id,
         )
+        logger.info(
+            "process-document done: session=%s requests=%d",
+            result.session_id,
+            len(result.requests),
+        )
+        return result
     except ValueError as exc:
+        logger.warning("process-document invalid input: %s", exc)
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        logger.exception("Document processing failed")
+        logger.exception("process-document failed: flow=%s pages=%d", flow_type, len(pages))
         raise HTTPException(status_code=500, detail=f"Processing failed: {exc}")
 
 
@@ -194,11 +246,23 @@ async def chat(
     pages_json. The coordinator classifies intent and routes to the correct flow.
     """
     pages = await _build_pages(pdf, pages_json)
+    logger.info(
+        "chat: session=%s has_pages=%s msg_len=%d",
+        session_id or "new",
+        pages is not None,
+        len(message),
+    )
     try:
         result = await agent.handle_chat_message(
             message=message,
             pages=pages,
             session_id=session_id,
+        )
+        logger.info(
+            "chat done: intent=%s flow=%s session=%s",
+            result.intent,
+            result.flow_type,
+            result.session_id,
         )
         return ChatResponse(
             session_id=result.session_id,
@@ -208,5 +272,5 @@ async def chat(
             document_result=result.document_result,
         )
     except Exception as exc:
-        logger.exception("Chat message handling failed")
+        logger.exception("chat failed: session=%s", session_id)
         raise HTTPException(status_code=500, detail=f"Chat failed: {exc}")
