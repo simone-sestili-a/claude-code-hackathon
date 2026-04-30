@@ -1,6 +1,6 @@
-# DocumentAI — Pension Fund Document Processor
+# DocumentAI — AI Ticket Management System
 
-Multi-agent pipeline for automated processing of Italian pension fund documents. Classifies incoming requests, routes them through a specialist pipeline (Document Reader → Task Recognizer → Worker → Summarizer), and exposes the result via a REST API with PDF upload support.
+Multi-agent pipeline for automated processing of Italian pension fund tickets with multi-page PDF attachments. Classifies incoming requests, extracts structured data from each page in parallel, detects and separates distinct sub-requests, and exposes the result via a REST API with PDF upload support.
 
 A full-featured **web frontend** is included in [`frontend/`](./frontend/) — built with Next.js 14, Tailwind CSS, and shadcn/ui.
 
@@ -194,7 +194,7 @@ User message + optional PDF
         │
         ▼
   Task Recognizer
-  └─ identifies Ercole module requests from aggregated page metadata
+  └─ identifies and separates distinct sub-requests from aggregated page metadata
   └─ tools: detect_subrequests, validate_request
         │
         ▼

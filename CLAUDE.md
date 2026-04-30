@@ -1,31 +1,30 @@
-# IntakeAI — Claude Code Brief
-**Scenario 5: Agentic IT Helpdesk Triage (Claude Agent SDK required)**
+# DocumentAI — Claude Code Brief
+**AI Ticket Management System — pipeline multi-agente per l'elaborazione automatizzata di ticket con allegati PDF**
 
 ## Mission
-Replace hand-triage of ~200 IT helpdesk requests/day. The agent classifies, enriches, routes, and acts — it does not chat.
-Stack: Python 3.12 · Claude Agent SDK · FastMCP · Pydantic v2
-Models: `claude-opus-4-7` (coordinator) · `claude-sonnet-4-6` (specialists)
+Automatizzare l'elaborazione di ticket di fondi pensione italiani contenenti allegati PDF multipagina. Il sistema classifica l'intento, estrae dati strutturati da ogni pagina in parallelo, rileva e separa le sub-richieste distinte, e restituisce un report strutturato.
+Stack: Python 3.12 · Claude Agent SDK · FastAPI · uv · Pydantic v2
+Models: `claude-haiku-4-5-20251001` (coordinator/classifier) · `claude-sonnet-4-6` (specialists)
 
 ## Hard Constraints — Never Cross These
 - Use Claude Agent SDK, not the raw Anthropic client SDK
-- No external emails sent — generate drafts only, humans send
-- No actions on accounts with status `FROZEN` (hook enforces this)
-- No auto-close on P1 or SECURITY category tickets
-- `ANTHROPIC_API_KEY` is the only required secret
+- Never add a new flow without registering it in `src/flows/__init__.py`
+- Never return unvalidated Pydantic models as API responses
+- `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` (LiteLLM proxy) is the only required secret
 
 ## How to Verify Your Work
 ```bash
-make type-check          # run first — fast
-make test                # unit tests
-python -m src.coordinator.agent --request '{"channel":"email","body":"VPN down","user_id":"u001"}' --dry-run
-make eval                # run before marking any challenge complete
+uv run pytest tests/ -v                          # run first — unit tests
+uv run mypy src/ --ignore-missing-imports        # type check
+uv run ruff check src/ tests/                    # lint
+uv run uvicorn src.api:app --reload --port 8000  # start API — docs at /docs
 ```
-If you cannot run `make test`, say so — do not claim the change works.
+If you cannot run `uv run pytest`, say so — do not claim the change works.
 
 ## Key Decisions (read before architecting anything)
 - Task subagents do **not** inherit coordinator context — always pass context explicitly
 - Hook = deterministic hard stop · Prompt = probabilistic preference (never mix)
-- Validation-retry loop lives in the coordinator only (max 3 retries, log each)
+- Flows are pluggable: add a new flow in `src/flows/<name>/` without touching coordinator, API, or session store
 - Every decision must be replayable from the audit log alone
 
 ## Learned Rules
